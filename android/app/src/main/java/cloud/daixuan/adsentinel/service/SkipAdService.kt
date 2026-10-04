@@ -6,6 +6,7 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
@@ -19,10 +20,13 @@ import cloud.daixuan.adsentinel.engine.AdRule
 import cloud.daixuan.adsentinel.engine.EngineBox
 
 /**
- * 无障碍核心服务:
- *  1. 窗口切换 / 内容变化时,用规则引擎匹配「跳过」类按钮并自动点击;
- *  2. 摇一摇防护:页面出现「摇一摇」提示,或广告 SDK 广告页跳过点击失败时,
- *     到达兜底时限后自动按返回,防止手一抖就跳转到电商 / 游戏页面。
+ * 无障碍核心服务,针对各种形态的开屏广告:
+ *  1. 窗口切换 / 内容变化时用规则引擎匹配「跳过」类按钮并自动点击;
+ *  2. 主动监听(AdWatch):识别为广告窗口后的 8 秒内每 300ms 周期补扫,
+ *     覆盖倒计时结束后才出现的按钮、WebView 内渲染的按钮等晚出现场景;
+ *  3. 摇一摇防护:页面出现「摇一摇」等文案时兜底自动返回;若仍失败,
+ *     尝试点按右上角(图片型跳过按钮的惯例位置);
+ *  4. 非激励类 SDK 广告页无按钮时自动返回;激励视频(用户主动观看)排除保护。
  */
 class SkipAdService : AccessibilityService() {
 
@@ -31,38 +35,72 @@ class SkipAdService : AccessibilityService() {
         var isRunning = false
             private set
 
-        /** 已知广告 SDK 的窗口 Activity 类名前缀。 */
+        /**
+         * 已知广告 SDK 的窗口 Activity 类名前缀。
+         * 注意:与 assets/rules/builtin.json 中 ad-sdk 规则的 activity 列表保持同步。
+         */
         private val AD_ACTIVITY_PATTERNS = listOf(
-            Regex("^com\\.bytedance\\.sdk\\.openadsdk\\..*"),
+            Regex("^com\\.bytedance\\.sdk\\.openadsdk\\..*"),   // 穿山甲 / Pangle / GroMore
             Regex("^com\\.byted\\.sdk\\.openadsdk\\..*"),
-            Regex("^com\\.qq\\.e\\.ads\\..*"),
-            Regex("^com\\.kwad\\..*"),
-            Regex("^com\\.baidu\\.mobads\\..*"),
-            Regex("^com\\.mbridge\\.msdk\\..*"),
+            Regex("^com\\.qq\\.e\\.ads\\..*"),                  // 优量汇 / 广点通
+            Regex("^com\\.kwad\\..*"),                          // 快手联盟
+            Regex("^com\\.baidu\\.mobads\\..*"),                // 百度
+            Regex("^com\\.mbridge\\.msdk\\..*"),                // Mintegral
             Regex("^com\\.mintegral\\..*"),
             Regex("^com\\.sigmob\\..*"),
-            Regex("^com\\.unity3d\\.ads\\..*"),
-            Regex("^com\\.applovin\\..*"),
+            Regex("^com\\.unity3d\\.ads\\..*"),                 // Unity Ads
+            Regex("^com\\.applovin\\..*"),                      // AppLovin
             Regex("^com\\.inmobi\\.ads\\..*"),
-            Regex("^cn\\.domob\\..*"),
+            Regex("^com\\.vungle\\..*"),
+            Regex("^com\\.ironsource\\..*"),                    // ironSource / Unity LevelPlay
+            Regex("^com\\.adcolony\\..*"),
+            Regex("^com\\.tapjoy\\..*"),
+            Regex("^com\\.chartboost\\..*"),
+            Regex("^com\\.fyber\\..*"),
+            Regex("^com\\.facebook\\.ads\\..*"),                // Meta Audience Network
+            Regex("^com\\.google\\.android\\.gms\\.ads\\..*"),  // AdMob / Google Mobile Ads
+            Regex("^com\\.anythink\\..*"),                      // TopOn / AnyThink
+            Regex("^com\\.beizi\\..*"),                         // 倍孜
+            Regex("^com\\.adview\\..*"),
+            Regex("^cn\\.domob\\..*"),                          // 多盟
             Regex("^com\\.domob\\..*"),
-            Regex("^com\\.jd\\.ads\\..*"),
+            Regex("^com\\.jd\\.ads\\..*"),                      // 京东
             Regex("^com\\.jingdong\\.ads\\..*"),
+            Regex("^com\\.miui\\.zeus\\..*"),                   // 小米
+            Regex("^com\\.opos\\..*"),                          // OPPO
+            Regex("^com\\.hihonor\\.ads\\..*"),                 // 荣耀
+            Regex("^com\\.huawei\\.hms\\.ads\\..*"),            // 华为
         )
 
-        /** 页面出现这些文案时,视为摇一摇类广告页(即使广告渲染在宿主自己的 Activity 里)。 */
+        /** 激励视频 / 带奖广告类名特征:用户主动观看,绝不自动返回或盲点。 */
+        private val REWARD_EXCLUDE = Regex("(?i)reward|incentiv|video|livestream")
+
+        /** 宿主自己的开屏 / 欢迎页类名(嵌入式开屏广告渲染在这些页面里)。 */
+        private val SPLASH_CLASS_PATTERNS = listOf(
+            Regex("[Ss]plash"),
+            Regex("[Ww]elcome"),
+        )
+
+        /** 页面出现这些文案即视为摇一摇类交互广告页(即使渲染在宿主自己的 Activity 里)。 */
         private val SHAKE_HINTS = listOf(
             Regex("摇一摇"),
-            Regex("摇动手机"),
+            Regex("摇动"),
             Regex("扭一扭"),
+            Regex("晃动"),
+            Regex("滑一滑"),
+            Regex("吹一吹"),
+            Regex("拍一拍"),
             Regex("(?i)shake"),
         )
 
         private const val SWEEP_INTERVAL_MS = 120L
-        private const val MAX_NODES = 2500
-        private const val MAX_PARENT_HOPS = 5
+        private const val WATCH_INTERVAL_MS = 300L
+        private const val WATCH_DURATION_MS = 8000L
+        private const val CORNER_TAP_AFTER_MS = 1500L
         private const val BACK_DELAY_HINT_MS = 1200L
         private const val BACK_DELAY_SDK_MS = 2500L
+        private const val MAX_NODES = 2500
+        private const val MAX_PARENT_HOPS = 5
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -72,6 +110,38 @@ class SkipAdService : AccessibilityService() {
     private var lastWindowClass: String? = null
     private var lastWindowPkg: String? = null
     private var pendingBack: Runnable? = null
+
+    // AdWatch 状态
+    private var watchActive = false
+    private var watchPkg: String? = null
+    private var watchCls: String? = null
+    private var watchStartAt = 0L
+    private var watchShakeHint = false
+    private var watchCornerTapped = false
+
+    private val watchTask = object : Runnable {
+        override fun run() {
+            if (!watchActive) return
+            val pkg = watchPkg
+            val cls = watchCls
+            if (pkg == null || lastWindowPkg != pkg || lastWindowClass != cls) {
+                stopWatch()
+                return
+            }
+            val elapsed = SystemClock.elapsedRealtime() - watchStartAt
+            if (elapsed > WATCH_DURATION_MS) {
+                stopWatch()
+                return
+            }
+            if (applicationContext.autoSkip) {
+                val result = sweep(pkg, cls, clickEnabled = true)
+                if (result.actions > 0) cancelPendingBack()
+                if (result.shakeHint) watchShakeHint = true
+                maybeCornerTap(elapsed)
+            }
+            handler.postDelayed(this, WATCH_INTERVAL_MS)
+        }
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -86,6 +156,7 @@ class SkipAdService : AccessibilityService() {
 
     override fun onDestroy() {
         isRunning = false
+        stopWatch()
         cancelPendingBack()
         super.onDestroy()
     }
@@ -103,27 +174,100 @@ class SkipAdService : AccessibilityService() {
 
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> onWindowChanged(pkg, event.className?.toString())
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> onContentChanged(pkg, event.className?.toString())
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> onContentChanged(pkg)
         }
     }
 
     private fun onWindowChanged(pkg: String, cls: String?) {
         cancelPendingBack()
+        stopWatch()
         lastWindowPkg = pkg
         lastWindowClass = cls
+
         val result = sweep(pkg, cls, clickEnabled = applicationContext.autoSkip)
         maybeScheduleBack(pkg, cls, result)
+        if (isWatchWorthy(result.shakeHint, cls)) startWatch(pkg, cls, result.shakeHint)
     }
 
-    private fun onContentChanged(pkg: String, cls: String?) {
-        val now = System.currentTimeMillis()
+    private fun onContentChanged(pkg: String) {
+        val now = SystemClock.elapsedRealtime()
         if (now - lastSweepAt < SWEEP_INTERVAL_MS) return
         lastSweepAt = now
-        // TYPE_WINDOW_CONTENT_CHANGED 的 className 通常是 View 类名而非 Activity,
-        // Activity 归属要以最近一次窗口切换事件记录的为准。
         val targetPkg = pkg.ifBlank { lastWindowPkg } ?: return
-        val result = sweep(targetPkg, lastWindowClass, clickEnabled = applicationContext.autoSkip)
+        val cls = lastWindowClass
+        val result = sweep(targetPkg, cls, clickEnabled = applicationContext.autoSkip)
         if (result.actions > 0) cancelPendingBack()
+        if (isWatchWorthy(result.shakeHint, cls) && !watchActive) {
+            // 内容变化才暴露出广告特征(如 WebView 渲染完成),补开主动监听
+            startWatch(targetPkg, cls, result.shakeHint)
+        }
+    }
+
+    private fun isWatchWorthy(shakeHint: Boolean, cls: String?): Boolean {
+        if (shakeHint) return true
+        if (cls == null) return false
+        return AD_ACTIVITY_PATTERNS.any { it.containsMatchIn(cls) } ||
+            SPLASH_CLASS_PATTERNS.any { it.containsMatchIn(cls) }
+    }
+
+    private fun startWatch(pkg: String, cls: String?, shakeHint: Boolean) {
+        stopWatch()
+        watchActive = true
+        watchPkg = pkg
+        watchCls = cls
+        watchStartAt = SystemClock.elapsedRealtime()
+        watchShakeHint = shakeHint
+        watchCornerTapped = false
+        handler.postDelayed(watchTask, WATCH_INTERVAL_MS)
+    }
+
+    private fun stopWatch() {
+        watchActive = false
+        handler.removeCallbacks(watchTask)
+    }
+
+    /**
+     * 摇一摇页面的图片型跳过按钮没有文字 / 描述可匹配,但几乎总在右上角。
+     * 在确认是摇一摇广告页且常规规则持续失败后,对手势点按一次右上角小型控件。
+     */
+    private fun maybeCornerTap(elapsedMs: Long) {
+        if (!applicationContext.shakeGuard) return
+        if (!watchShakeHint || watchCornerTapped) return
+        if (elapsedMs < CORNER_TAP_AFTER_MS) return
+        watchCornerTapped = true
+
+        val root = rootInActiveWindow ?: return
+        val screen = resources.displayMetrics
+        val zoneLeft = screen.widthPixels * 0.70
+        val zoneBottom = screen.heightPixels * 0.30
+        val maxW = screen.widthPixels * 0.35
+        val maxH = screen.heightPixels * 0.15
+
+        val rect = Rect()
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var scanned = 0
+        while (queue.isNotEmpty() && scanned < MAX_NODES) {
+            val node = queue.removeFirst()
+            scanned++
+            node.getBoundsInScreen(rect)
+            val cx = rect.exactCenterX()
+            val cy = rect.exactCenterY()
+            if (rect.width() in 1..maxW.toInt() && rect.height() in 1..maxH.toInt() &&
+                cx >= zoneLeft && cy <= zoneBottom
+            ) {
+                if (tapByGesture(node)) {
+                    BlockStats.record(applicationContext)
+                    if (applicationContext.blockNotify) {
+                        Toast.makeText(this, getString(R.string.toast_block_fmt, "右上角跳过(摇一摇广告)"), Toast.LENGTH_SHORT).show()
+                    }
+                }
+                return
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.add(it) }
+            }
+        }
     }
 
     /** 摇一摇防护调度:本轮没有点掉任何东西时,安排一次兜底返回。 */
@@ -133,15 +277,21 @@ class SkipAdService : AccessibilityService() {
             cancelPendingBack()
             return
         }
-        if (pendingBack != null) return
+        if (pendingBack != null || cls == null) return
 
-        val isSdkAd = cls != null && AD_ACTIVITY_PATTERNS.any { it.containsMatchIn(cls) }
-        if (!result.shakeHint && !isSdkAd) return
-        // 只有出现摇一摇提示时才对宿主自己的窗口做兜底返回;纯 SDK 广告页
-        // (例如激励视频)只在「跳过点击失败」时返回,避免打断用户主动观看。
-        if (!result.shakeHint && !result.skipFailed) return
+        val isSdkAd = AD_ACTIVITY_PATTERNS.any { it.containsMatchIn(cls) }
+        val isSplash = SPLASH_CLASS_PATTERNS.any { it.containsMatchIn(cls) }
+        val isReward = REWARD_EXCLUDE.containsMatchIn(cls)
 
-        val delay = if (result.shakeHint) BACK_DELAY_HINT_MS else BACK_DELAY_SDK_MS
+        val delay = when {
+            result.shakeHint -> BACK_DELAY_HINT_MS
+            // 非激励类 SDK 广告页:即使没有匹配到按钮也兜底返回(覆盖无按钮插屏)
+            isSdkAd && !isReward -> BACK_DELAY_SDK_MS
+            // 宿主开屏页:仅在发现过跳过类控件但点击失败时返回,避免误退正常启动
+            isSplash && result.skipFailed -> BACK_DELAY_SDK_MS
+            else -> return
+        }
+
         val task = Runnable {
             pendingBack = null
             val stillSame = lastWindowPkg == pkg && lastWindowClass == cls

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "name": "AdSentinel 内置规则",
   "updatedAt": "2026-10-04",
   "rules": [
@@ -8,13 +8,16 @@
       "name": "通用「跳过」按钮",
       "apps": ["*"],
       "text": [
-        "^\\s*跳过\\s*\\d*\\s*s?\\s*$",
-        "^\\s*跳过广告\\s*$",
-        "^\\s*点击跳过\\s*$",
-        "^\\s*跳过此广告\\s*$",
-        "^\\s*跳过\\s*\\d+\\s*$"
+        "^\\s*跳过(广告)?\\s*(\\d{1,2}\\s*s?)?\\s*$",
+        "^\\s*跳過(廣告)?\\s*(\\d{1,2}\\s*s?)?\\s*$",
+        "^\\s*点击(可)?跳过(\\s*\\d{1,2}\\s*s?)?\\s*$",
+        "^\\s*点我跳过\\s*$",
+        "^\\s*\\d{1,2}\\s*s?\\s*后(可)?跳过\\s*$",
+        "^\\s*跳过.{0,3}\\d{1,2}\\s*s?\\s*$",
+        "^\\s*\\d{1,2}\\s*s\\s*后跳过\\s*$",
+        "(?i)^\\s*skip(\\s*(ad|\\d{1,2}\\s*s?))?\\s*$"
       ],
-      "contentDesc": ["^\\s*跳过"],
+      "contentDesc": ["跳过", "跳過", "(?i)skip"],
       "action": "click",
       "cooldownMs": 800
     },
@@ -34,28 +37,62 @@
         "^com\\.unity3d\\.ads\\..*",
         "^com\\.applovin\\..*",
         "^com\\.inmobi\\.ads\\..*",
+        "^com\\.vungle\\..*",
+        "^com\\.ironsource\\..*",
+        "^com\\.adcolony\\..*",
+        "^com\\.tapjoy\\..*",
+        "^com\\.chartboost\\..*",
+        "^com\\.fyber\\..*",
+        "^com\\.facebook\\.ads\\..*",
+        "^com\\.google\\.android\\.gms\\.ads\\..*",
+        "^com\\.anythink\\..*",
+        "^com\\.beizi\\..*",
+        "^com\\.adview\\..*",
         "^cn\\.domob\\..*",
         "^com\\.domob\\..*",
-        "^com\\.jd\\.ads\\..*"
+        "^com\\.jd\\.ads\\..*",
+        "^com\\.jingdong\\.ads\\..*",
+        "^com\\.miui\\.zeus\\..*",
+        "^com\\.opos\\..*",
+        "^com\\.hihonor\\.ads\\..*",
+        "^com\\.huawei\\.hms\\.ads\\..*"
       ],
-      "text": ["跳过", "以后再说", "暂不", "关闭", "^\\s*[×✕xX]\\s*$"],
-      "contentDesc": ["跳过", "关闭"],
+      "text": [
+        "跳过", "跳過", "仍然跳过", "继续跳过", "点我跳过",
+        "以后再说", "暂不", "关闭", "关闭广告",
+        "^\\s*[×✕]\\s*$", "(?i)skip"
+      ],
+      "contentDesc": ["跳过", "跳過", "关闭", "(?i)skip"],
       "action": "click",
       "cooldownMs": 1000
     },
     {
       "id": "ad-sdk-close-view",
-      "name": "广告 SDK 关闭控件",
+      "name": "广告 SDK 关闭/跳过控件",
       "apps": ["*"],
       "activity": [
         "^com\\.bytedance\\.sdk\\.openadsdk\\..*",
         "^com\\.qq\\.e\\.ads\\..*",
         "^com\\.kwad\\..*",
-        "^com\\.baidu\\.mobads\\..*"
+        "^com\\.baidu\\.mobads\\..*",
+        "^com\\.anythink\\..*",
+        "^com\\.mbridge\\.msdk\\..*",
+        "^com\\.sigmob\\..*",
+        "^com\\.google\\.android\\.gms\\.ads\\..*",
+        "^com\\.facebook\\.ads\\..*"
       ],
-      "viewId": ["^iv_?close$", "^close_?(btn|image|imageview|view|icon)$", "^btn_?close$", "^m_?close$"],
+      "viewId": "(?i)(close|skip)",
       "action": "click",
       "cooldownMs": 1200
+    },
+    {
+      "id": "ad-confirm-skip",
+      "name": "广告确认弹窗自动确认",
+      "apps": ["*"],
+      "activity": [".*Ad.*Activity", ".*AdDialog"],
+      "text": ["确认跳过", "仍然跳过", "继续跳过", "直接跳过", "放弃并跳过", "确定跳过"],
+      "action": "click",
+      "cooldownMs": 1000
     },
     {
       "id": "splash-update-later",
