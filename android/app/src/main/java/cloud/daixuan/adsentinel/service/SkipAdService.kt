@@ -174,7 +174,13 @@ class SkipAdService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
         if (pkg == packageName) return
         if (pkg in applicationContext.whitelist) {
+            // 白名单应用:必须彻底停掉此前为其他应用启动的监听,
+            // 否则遗留的 watchTask 会拿着旧应用的状态继续扫描/点击,
+            // 而此时 rootInActiveWindow 已是白名单应用的窗口,构成绕过
             cancelPendingBack()
+            stopWatch()
+            lastWindowPkg = null
+            lastWindowClass = null
             return
         }
 
@@ -335,6 +341,12 @@ class SkipAdService : AccessibilityService() {
     private fun sweep(pkg: String, cls: String?, clickEnabled: Boolean): SweepResult {
         val rules = engine.activeRules(pkg, cls)
         val root = rootInActiveWindow ?: return SweepResult(0, false, false)
+        // 扫描/点击前重新核对:当前活动窗口必须仍属于目标应用,且不在白名单内。
+        // 防止切换应用后遗留的定时任务拿着过期状态在新窗口里执行点击
+        val rootPkg = root.packageName?.toString()
+        if (rootPkg.isNullOrBlank() || rootPkg != pkg || rootPkg in applicationContext.whitelist) {
+            return SweepResult(0, false, false)
+        }
 
         var shakeHint = false
         var skipFailed = false
