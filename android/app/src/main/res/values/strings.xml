@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">广告哨兵</string>
+
+    <!-- 无障碍服务 -->
+    <string name="accessibility_service_label">广告哨兵 - 自动跳过服务</string>
+    <string name="accessibility_service_desc">自动点击开屏广告的「跳过」按钮,识别摇一摇广告页并自动返回。本服务不会读取密码输入框内容,不联网,不上传任何数据。</string>
+
+    <!-- 主界面 -->
+    <string name="service_status_title">服务状态</string>
+    <string name="service_running">运行中,正在守护你的屏幕</string>
+    <string name="service_stopped">未开启,点下方按钮立即开启</string>
+    <string name="btn_enable_service">开启无障碍服务</string>
+    <string name="btn_open_settings">打开系统无障碍设置</string>
+
+    <string name="section_features">功能开关</string>
+    <string name="sw_auto_skip">自动点击「跳过」按钮</string>
+    <string name="sw_auto_skip_sub">开屏广告出现时自动点击跳过</string>
+    <string name="sw_shake_guard">摇一摇防护</string>
+    <string name="sw_shake_guard_sub">识别广告 SDK 广告页,无跳过按钮时自动返回</string>
+    <string name="sw_notify">拦截提示</string>
+    <string name="sw_notify_sub">每次拦截时弹出轻提示</string>
+
+    <string name="section_rules">规则</string>
+    <string name="btn_whitelist">应用白名单</string>
+    <string name="btn_import_rules">导入自定义规则</string>
+    <string name="btn_reset_rules">恢复内置规则</string>
+    <string name="rules_version">内置规则 %1$s · 共 %2$d 条</string>
+    <string name="rules_import_ok">已导入 %1$d 条自定义规则</string>
+    <string name="rules_import_fail">导入失败:%1$s</string>
+    <string name="rules_reset_ok">已恢复为内置规则</string>
+
+    <string name="section_stats">拦截统计</string>
+    <string name="stats_today">今日拦截 %1$d 次</string>
+    <string name="stats_total">累计拦截 %1$d 次</string>
+
+    <string name="section_about">关于</string>
+    <string name="about_line">AdSentinel 广告哨兵 v%1$s\n完全本地运行 · 不申请网络权限 · 不上传数据\nGPL-3.0 开源</string>
+
+    <!-- 白名单 -->
+    <string name="whitelist_title">应用白名单</string>
+    <string name="whitelist_empty">没有检测到已安装的应用</string>
+    <string name="whitelist_saved">白名单已保存</string>
+
+    <!-- 其他 -->
+    <string name="toast_block_fmt">已拦截:%1$s</string>
+    <string name="back_block_fmt">已自动返回:%1$s</string>
+    <string name="dialog_ok">确定</string>
+</resources>

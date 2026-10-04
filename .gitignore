@@ -1,0 +1,33 @@
+# ==== General ====
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+*.tmp
+
+# ==== Android / Gradle ====
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+local.properties
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk.idsig
+*.keystore
+!debug.keystore
+
+# ==== Visual Studio / .NET ====
+.vs/
+bin/
+obj/
+*.user
+*.suo
+artifacts/
+out/
+TestResults/
+
+# ==== Node/other tooling (future) ====
+node_modules/

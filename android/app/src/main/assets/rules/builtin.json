@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "name": "AdSentinel 内置规则",
+  "updatedAt": "2026-10-04",
+  "rules": [
+    {
+      "id": "universal-skip-btn",
+      "name": "通用「跳过」按钮",
+      "apps": ["*"],
+      "text": [
+        "^\\s*跳过\\s*\\d*\\s*s?\\s*$",
+        "^\\s*跳过广告\\s*$",
+        "^\\s*点击跳过\\s*$",
+        "^\\s*跳过此广告\\s*$",
+        "^\\s*跳过\\s*\\d+\\s*$"
+      ],
+      "contentDesc": ["^\\s*跳过"],
+      "action": "click",
+      "cooldownMs": 800
+    },
+    {
+      "id": "ad-sdk-page-skip",
+      "name": "广告 SDK 页面跳过/关闭",
+      "apps": ["*"],
+      "activity": [
+        "^com\\.bytedance\\.sdk\\.openadsdk\\..*",
+        "^com\\.byted\\.sdk\\.openadsdk\\..*",
+        "^com\\.qq\\.e\\.ads\\..*",
+        "^com\\.kwad\\..*",
+        "^com\\.baidu\\.mobads\\..*",
+        "^com\\.mbridge\\.msdk\\..*",
+        "^com\\.mintegral\\..*",
+        "^com\\.sigmob\\..*",
+        "^com\\.unity3d\\.ads\\..*",
+        "^com\\.applovin\\..*",
+        "^com\\.inmobi\\.ads\\..*",
+        "^cn\\.domob\\..*",
+        "^com\\.domob\\..*",
+        "^com\\.jd\\.ads\\..*"
+      ],
+      "text": ["跳过", "以后再说", "暂不", "关闭", "^\\s*[×✕xX]\\s*$"],
+      "contentDesc": ["跳过", "关闭"],
+      "action": "click",
+      "cooldownMs": 1000
+    },
+    {
+      "id": "ad-sdk-close-view",
+      "name": "广告 SDK 关闭控件",
+      "apps": ["*"],
+      "activity": [
+        "^com\\.bytedance\\.sdk\\.openadsdk\\..*",
+        "^com\\.qq\\.e\\.ads\\..*",
+        "^com\\.kwad\\..*",
+        "^com\\.baidu\\.mobads\\..*"
+      ],
+      "viewId": ["^iv_?close$", "^close_?(btn|image|imageview|view|icon)$", "^btn_?close$", "^m_?close$"],
+      "action": "click",
+      "cooldownMs": 1200
+    },
+    {
+      "id": "splash-update-later",
+      "name": "版本更新「以后再说/取消」",
+      "apps": ["*"],
+      "activity": [".*[Uu]pdate.*", ".*[Ss]plash.*"],
+      "text": ["以后再说", "暂不更新", "下次再说", "取消"],
+      "action": "click",
+      "cooldownMs": 3000
+    }
+  ]
+}
