@@ -32,6 +32,8 @@ public sealed class PopupMonitor : IDisposable
     public event Action<BlockEventArgs>? Blocked;
 
     private const int ScanIntervalMs = 800;
+    private const int IdleScanIntervalMs = 1600;
+    private const int QuietScansBeforeIdle = 20;
 
     private readonly AppConfig _config;
     private readonly System.Windows.Forms.Timer _timer;
@@ -39,6 +41,7 @@ public sealed class PopupMonitor : IDisposable
     private readonly HashSet<long> _knownWindows = new();
     private readonly Dictionary<uint, string> _processNameCache = new();
     private readonly int _ownPid;
+    private int _quietScans;
 
     private static readonly Regex AdKeywords = new(
         "今日热点|热点资讯|新闻资讯|热点新闻|高清视频|免费电影|追剧|领红包|抢红包|红包雨|现金红包|" +
@@ -97,13 +100,18 @@ public sealed class PopupMonitor : IDisposable
         }
     }
 
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        Stop();
+        _timer.Dispose();
+    }
 
     // ------------------------------------------------------------------ 扫描
 
     private void Scan()
     {
         if (!_config.Enabled) return;
+        var knownBefore = _knownWindows.Count;
         var alive = new HashSet<long>();
         try
         {
@@ -120,9 +128,32 @@ public sealed class PopupMonitor : IDisposable
         }
         // 只保留仍存在的窗口;窗口销毁后句柄值可能被系统复用,必须及时清掉
         _knownWindows.IntersectWith(alive);
+
+        // 自适应频率:连续多轮没有新窗口时降频扫描,发现新窗口立即恢复
+        if (_knownWindows.Count > knownBefore)
+        {
+            _quietScans = 0;
+            if (_timer.Interval != ScanIntervalMs) _timer.Interval = ScanIntervalMs;
+        }
+        else if (++_quietScans >= QuietScansBeforeIdle && _timer.Interval != IdleScanIntervalMs)
+        {
+            _timer.Interval = IdleScanIntervalMs;
+        }
     }
 
     private void InspectNewWindow(IntPtr hWnd)
+    {
+        try
+        {
+            InspectNewWindowCore(hWnd);
+        }
+        catch
+        {
+            // 单个窗口的句柄失效、权限不足等异常不应中断整轮扫描
+        }
+    }
+
+    private void InspectNewWindowCore(IntPtr hWnd)
     {
         if (!NativeMethods.IsWindowVisible(hWnd) || NativeMethods.IsIconic(hWnd)) return;
         if (IsCloaked(hWnd)) return;
@@ -226,10 +257,18 @@ public sealed class PopupMonitor : IDisposable
 
     private static bool IsFullscreenCover(WindowInfo w)
     {
-        var bounds = System.Windows.Forms.Screen.FromHandle(w.Hwnd).Bounds;
-        long screenArea = (long)bounds.Width * bounds.Height;
-        long windowArea = (long)w.Width * w.Height;
-        return screenArea > 0 && windowArea >= screenArea * 0.85;
+        try
+        {
+            var bounds = System.Windows.Forms.Screen.FromHandle(w.Hwnd).Bounds;
+            long screenArea = (long)bounds.Width * bounds.Height;
+            long windowArea = (long)w.Width * w.Height;
+            return screenArea > 0 && windowArea >= screenArea * 0.85;
+        }
+        catch
+        {
+            // 句柄失效或跨屏异常时按“非全屏”放行,宁可漏拦不可误杀
+            return false;
+        }
     }
 
     private static bool IsCloaked(IntPtr hWnd)
@@ -250,6 +289,9 @@ public sealed class PopupMonitor : IDisposable
 
     private void Apply(string ruleName, string action, WindowInfo w, bool smart)
     {
+        // 句柄可能在判定与处置之间被销毁,动作前先确认窗口仍然存在
+        if (!NativeMethods.IsWindow(w.Hwnd)) return;
+
         switch (action)
         {
             case "hide":
@@ -257,16 +299,8 @@ public sealed class PopupMonitor : IDisposable
                 break;
 
             case "kill":
-                try
-                {
-                    // 注意:进程复用 PID 的概率极低,且 kill 仅在用户显式编写规则时触发
-                    Process.GetProcessById((int)w.Pid).Kill(entireProcessTree: true);
-                }
-                catch
-                {
-                    // 进程可能已退出
-                }
-                NativeMethods.PostMessage(w.Hwnd, NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                // 仅结束经身份复核的原进程,不再补发 WM_CLOSE,避免 PID 复用时误伤
+                KillProcessTreeForWindow(w);
                 break;
 
             default:
@@ -276,6 +310,24 @@ public sealed class PopupMonitor : IDisposable
 
         var args = new BlockEventArgs(ruleName, w.Process, w.Title, action, smart);
         Blocked?.Invoke(args);
+    }
+
+    private static void KillProcessTreeForWindow(WindowInfo w)
+    {
+        try
+        {
+            // 复核窗口当前归属的 PID 与判定时一致、进程名一致,防止句柄复用导致误杀
+            NativeMethods.GetWindowThreadProcessId(w.Hwnd, out var pidNow);
+            if (pidNow == 0 || pidNow != w.Pid) return;
+            using var proc = Process.GetProcessById((int)pidNow);
+            if (proc.HasExited) return;
+            if (!proc.ProcessName.Equals(w.Process, StringComparison.OrdinalIgnoreCase)) return;
+            proc.Kill(entireProcessTree: true);
+        }
+        catch
+        {
+            // 进程可能刚好自行退出
+        }
     }
 
     // ------------------------------------------------------------------ 工具
@@ -303,20 +355,34 @@ public sealed class PopupMonitor : IDisposable
 
     private static string GetTitle(IntPtr hWnd)
     {
-        var sb = new StringBuilder(512);
-        NativeMethods.GetWindowText(hWnd, sb, 512);
+        // 先查询实际长度再分配,避免复杂标题被固定缓冲区截断导致规则漏命中
+        int len;
+        try
+        {
+            len = NativeMethods.GetWindowTextLength(hWnd);
+        }
+        catch
+        {
+            return string.Empty;
+        }
+        var capacity = Math.Max(len + 1, 64);
+        var sb = new StringBuilder(capacity);
+        NativeMethods.GetWindowText(hWnd, sb, capacity);
         return sb.ToString();
     }
 
     private static string GetClassName(IntPtr hWnd)
     {
-        var sb = new StringBuilder(256);
-        NativeMethods.GetClassName(hWnd, sb, 256);
+        var sb = new StringBuilder(1024);
+        NativeMethods.GetClassName(hWnd, sb, 1024);
         return sb.ToString();
     }
 
-    /// <summary>运行时绘制托盘图标,避免在仓库中存放二进制资源。</summary>
-    public static Icon CreateTrayIcon()
+    /// <summary>
+    /// 运行时绘制托盘图标,避免在仓库中存放二进制资源。
+    /// Icon.FromHandle 不接管 HICON 所有权,调用方须在图标用完后调用 DestroyIcon 释放。
+    /// </summary>
+    public static Icon CreateTrayIcon(out IntPtr hIcon)
     {
         using var bmp = new Bitmap(32, 32);
         using (var g = Graphics.FromImage(bmp))
@@ -332,6 +398,7 @@ public sealed class PopupMonitor : IDisposable
             g.DrawLine(pen, 9, 17, 14, 22);
             g.DrawLine(pen, 14, 22, 23, 10);
         }
-        return Icon.FromHandle(bmp.GetHicon());
+        hIcon = bmp.GetHicon();
+        return Icon.FromHandle(hIcon);
     }
 }

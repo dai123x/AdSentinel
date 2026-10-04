@@ -9,13 +9,18 @@ public sealed class TrayContext : ApplicationContext, IDisposable
     private readonly PopupMonitor _monitor;
     private readonly NotifyIcon _tray;
     private readonly Icon _icon;
+    private readonly IntPtr _iconHandle;
     private readonly ToolStripMenuItem _menuEnabled;
     private readonly ToolStripMenuItem _menuSmart;
     private readonly ToolStripMenuItem _menuBalloon;
     private readonly ToolStripMenuItem _menuAutoStart;
+    private readonly ContextMenuStrip _menu;
     private SettingsForm? _settingsForm;
     private LogForm? _logForm;
     private DateTime _lastBalloonAt = DateTime.MinValue;
+
+    private static string VersionText =>
+        typeof(TrayContext).Assembly.GetName().Version?.ToString(3) ?? "?";
 
     public TrayContext()
     {
@@ -24,7 +29,7 @@ public sealed class TrayContext : ApplicationContext, IDisposable
         _monitor.Blocked += OnBlocked;
         if (_config.Enabled) _monitor.Start();
 
-        _icon = PopupMonitor.CreateTrayIcon();
+        _icon = PopupMonitor.CreateTrayIcon(out _iconHandle);
         _tray = new NotifyIcon
         {
             Icon = _icon,
@@ -58,29 +63,29 @@ public sealed class TrayContext : ApplicationContext, IDisposable
             SyncConfig();
         });
 
-        var menu = new ContextMenuStrip();
-        menu.Items.Add(_menuEnabled);
-        menu.Items.Add(_menuSmart);
-        menu.Items.Add(_menuBalloon);
-        menu.Items.Add(_menuAutoStart);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("设置…", null, (_, _) => ShowSettings());
-        menu.Items.Add("拦截日志…", null, (_, _) => ShowLog());
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("关于 AdSentinel", null, (_, _) => MessageBox.Show(
-            "AdSentinel 广告哨兵 v1.0.0\n\n" +
+        _menu = new ContextMenuStrip();
+        _menu.Items.Add(_menuEnabled);
+        _menu.Items.Add(_menuSmart);
+        _menu.Items.Add(_menuBalloon);
+        _menu.Items.Add(_menuAutoStart);
+        _menu.Items.Add(new ToolStripSeparator());
+        _menu.Items.Add("设置…", null, (_, _) => ShowSettings());
+        _menu.Items.Add("拦截日志…", null, (_, _) => ShowLog());
+        _menu.Items.Add(new ToolStripSeparator());
+        _menu.Items.Add("关于 AdSentinel", null, (_, _) => MessageBox.Show(
+            $"AdSentinel 广告哨兵 v{VersionText}\n\n" +
             "开源 Windows / Android 广告拦截工具\n" +
             "完全本地运行,不上传任何数据\n\n" +
             "https://github.com/dai123x/AdSentinel\n" +
             "基于 GPL-3.0 开源",
             "关于 AdSentinel", MessageBoxButtons.OK, MessageBoxIcon.Information));
-        menu.Items.Add("退出", null, (_, _) =>
+        _menu.Items.Add("退出", null, (_, _) =>
         {
             _tray.Visible = false;
             Application.Exit();
         });
 
-        _tray.ContextMenuStrip = menu;
+        _tray.ContextMenuStrip = _menu;
         SyncMenuChecks();
     }
 
@@ -164,7 +169,12 @@ public sealed class TrayContext : ApplicationContext, IDisposable
         _monitor.Dispose();
         _tray.Visible = false;
         _tray.Dispose();
+        _menu.Dispose();
         _icon.Dispose();
+        // Icon.FromHandle 不接管 HICON 所有权,须显式销毁防止 GDI 句柄泄漏
+        if (_iconHandle != IntPtr.Zero) NativeMethods.DestroyIcon(_iconHandle);
+        _settingsForm?.Dispose();
+        _logForm?.Dispose();
         base.Dispose();
     }
 }

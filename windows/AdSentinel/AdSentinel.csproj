@@ -8,8 +8,8 @@
     <Nullable>enable</Nullable>
     <AssemblyName>AdSentinel</AssemblyName>
     <RootNamespace>AdSentinel</RootNamespace>
-    <Version>1.0.0</Version>
-    <FileVersion>1.0.0</FileVersion>
+    <Version>1.2.1</Version>
+    <FileVersion>1.2.1</FileVersion>
     <Product>AdSentinel 广告哨兵</Product>
     <Description>开源 Windows 弹窗广告拦截器</Description>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
