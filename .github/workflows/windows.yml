@@ -2,9 +2,13 @@ name: Windows Build
 
 on:
   push:
+    branches:
+      - main
     paths:
       - "windows/**"
       - ".github/workflows/windows.yml"
+    tags:
+      - "v*"
   pull_request:
     paths:
       - "windows/**"
