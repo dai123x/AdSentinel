@@ -101,6 +101,12 @@ class SkipAdService : AccessibilityService() {
         private const val BACK_DELAY_SDK_MS = 2500L
         private const val MAX_NODES = 2500
         private const val MAX_PARENT_HOPS = 5
+
+        /** zone=topRight 的区域边界(中心点相对屏幕的比例 / 控件最大尺寸比例)。 */
+        private const val ZONE_MIN_X_RATIO = 0.55
+        private const val ZONE_MAX_Y_RATIO = 0.30
+        private const val ZONE_MAX_W_RATIO = 0.40
+        private const val ZONE_MAX_H_RATIO = 0.20
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -346,6 +352,7 @@ class SkipAdService : AccessibilityService() {
             }
             if (clickEnabled) {
                 for (rule in rules) {
+                    if (rule.zone != null && !nodeInTopRight(node)) continue
                     if (node.matches(rule)) {
                         hits.getOrPut(rule.id) { rule to mutableListOf() }.second.add(node)
                         break
@@ -396,6 +403,22 @@ class SkipAdService : AccessibilityService() {
         val text = try { text?.toString() } catch (_: Exception) { null }
         val desc = try { contentDescription?.toString() } catch (_: Exception) { null }
         return rule.matchesNode(text, desc, id)
+    }
+
+    private val zoneRect = Rect()
+
+    /** zone="topRight":节点须是位于屏幕右上角的小尺寸控件(跳过按钮的惯例位置)。 */
+    private fun nodeInTopRight(node: AccessibilityNodeInfo): Boolean {
+        node.getBoundsInScreen(zoneRect)
+        if (zoneRect.isEmpty) return false
+        val screen = resources.displayMetrics
+        val cx = zoneRect.exactCenterX()
+        val cy = zoneRect.exactCenterY()
+        if (cx < screen.widthPixels * ZONE_MIN_X_RATIO) return false
+        if (cy > screen.heightPixels * ZONE_MAX_Y_RATIO) return false
+        if (zoneRect.width() > screen.widthPixels * ZONE_MAX_W_RATIO) return false
+        if (zoneRect.height() > screen.heightPixels * ZONE_MAX_H_RATIO) return false
+        return true
     }
 
     private fun clickNode(node: AccessibilityNodeInfo): Boolean {

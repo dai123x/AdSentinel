@@ -40,5 +40,17 @@
     "name": "赚钱返利类弹窗",
     "title": "轻松.{0,4}赚钱|日结.{0,4}返利|兼职.{0,4}日结|点赞.{0,4}赚钱",
     "action": "close"
+  },
+  {
+    "id": "win-wps-push",
+    "name": "WPS 推送/推广弹窗",
+    "process": "^(wpsnotify|ksetopupmgr)$",
+    "action": "close"
+  },
+  {
+    "id": "win-360-huabao",
+    "name": "360 画报弹窗",
+    "process": "^360huabao$",
+    "action": "close"
   }
 ]

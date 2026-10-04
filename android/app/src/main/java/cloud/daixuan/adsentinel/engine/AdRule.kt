@@ -8,8 +8,12 @@ import org.json.JSONObject
  *
  * 匹配语义:
  *  - 所有正则均为「部分匹配」(containsMatchIn),需要全匹配请自行加 ^ $;
- *  - text / contentDesc / viewId 之间是「或」关系,命中任一即视为命中节点;
- *  - viewId 若同时给出,则是额外的「且」条件;
+ *  - text / contentDesc / viewId 之间默认是「或」关系,命中任一即视为命中节点;
+ *  - viewId 若存在且 matchAny=false,则是额外的「且」条件;
+ *  - matchAny=true 时 text / contentDesc / viewId 完全并列(任一命中即可),
+ *    配合 zone 使用可以识别无文字、仅靠控件 id 或倒计时数字定位的图片型跳过按钮;
+ *  - zone="topRight" 把节点限定在屏幕右上角的小尺寸区域(跳过按钮的惯例位置),
+ *    是防止误点正常界面的关键约束;
  *  - activity 收窄当前窗口的 Activity 类名,apps 收窄宿主包名。
  */
 data class AdRule(
@@ -23,6 +27,8 @@ data class AdRule(
     val action: String,
     val cooldownMs: Long,
     val enabled: Boolean,
+    val zone: String? = null,
+    val matchAny: Boolean = false,
 ) {
     fun matchesApp(pkg: String): Boolean = apps.any { it.containsMatchIn(pkg) }
 
@@ -34,19 +40,22 @@ data class AdRule(
         desc: String?,
         viewIdResource: String?,
     ): Boolean {
-        if (viewId != null) {
-            val res = viewIdResource?.substringAfterLast('/') ?: return false
-            if (!viewId.containsMatchIn(res)) return false
-        }
-        if (texts != null && text != null && texts.any { it.containsMatchIn(text) }) return true
-        if (descs != null && desc != null && descs.any { it.containsMatchIn(desc) }) return true
-        return false
+        val idMatch = viewId != null && viewIdResource != null &&
+            viewId.containsMatchIn(viewIdResource.substringAfterLast('/'))
+        val textMatch = texts != null && text != null && texts.any { it.containsMatchIn(text) }
+        val descMatch = descs != null && desc != null && descs.any { it.containsMatchIn(desc) }
+
+        if (matchAny) return textMatch || descMatch || idMatch
+
+        if (viewId != null && !idMatch) return false
+        return textMatch || descMatch
     }
 
     companion object {
         const val ACTION_CLICK = "click"
         const val ACTION_CLICK_ALL = "clickAll"
         const val ACTION_BACK = "back"
+        const val ZONE_TOP_RIGHT = "topRight"
     }
 }
 
@@ -111,6 +120,9 @@ object RuleParser {
 
             val cooldown = o.optLong("cooldownMs", 800L).coerceIn(0L, 60_000L)
 
+            val zone = o.optString("zone", "").ifBlank { null }
+            require(zone == null || zone == AdRule.ZONE_TOP_RIGHT) { "不支持的 zone:$zone" }
+
             return AdRule(
                 id = id,
                 name = name,
@@ -122,6 +134,8 @@ object RuleParser {
                 action = action,
                 cooldownMs = cooldown,
                 enabled = o.optBoolean("enabled", true),
+                zone = zone,
+                matchAny = o.optBoolean("matchAny", false),
             )
         } catch (e: IllegalArgumentException) {
             throw IllegalArgumentException("rules[$index]「$name」:${e.message}")

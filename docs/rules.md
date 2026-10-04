@@ -20,6 +20,8 @@ AdSentinel 的两端都使用 **JSON 规则 + 正则匹配**。规则在本地�
 
 ### 单条规则字段
 
+所有正则为**部分匹配**(`containsMatchIn`),需要全匹配请自行加 `^` `$`。
+
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|:---:|------|
 | `id` | string | ✅ | 唯一 ID,也用于冷却去重 |
@@ -29,12 +31,15 @@ AdSentinel 的两端都使用 **JSON 规则 + 正则匹配**。规则在本地�
 | `text` | string[]? | — | 节点文字正则列表(命中任意一条即可) |
 | `contentDesc` | string[]? | — | 无障碍 contentDescription 正则列表 |
 | `viewId` | string? | — | 控件 id 资源名正则(如 `^skip$`) |
+| `zone` | string? | — | `topRight`:节点必须是屏幕右上角的小尺寸控件(跳过按钮惯例位置)。**识别图片型跳过按钮、防止误点正常界面的关键约束** |
+| `matchAny` | bool? | — | `true`:text / contentDesc / viewId 完全并列,任一命中即可(配合 zone 用);默认 `false`:viewId 是额外的且条件 |
 | `action` | string | ✅ | `click`(点击第一个命中)/ `clickAll`(点掉全部)/ `back`(按返回) |
 | `cooldownMs` | int? | — | 同规则同应用两次触发之间的最小间隔,默认 `800` |
 | `enabled` | bool? | — | 默认 `true` |
 
 > `text` / `contentDesc` / `viewId` 至少写一个,否则规则永远不会生效。
-> 同一规则内多个条件是 **或** 关系(任一命中即点击);`viewId` 若存在则是额外 **且** 条件。
+> 同一规则内多个条件默认是 **或** 关系(任一命中即点击);`viewId` 若存在且 `matchAny` 不为 true 则是额外 **且** 条件。
+> 想匹配「无文字的图片型跳过按钮」或「只有倒计时数字的圆形按钮」时,用 `zone: "topRight"` + `matchAny: true` + `viewId` 正则,区域与尺寸约束能把误点率压到最低。
 
 ### 示例
 
