@@ -41,17 +41,21 @@ jobs:
       - name: Build release APK (unsigned)
         run: ./gradlew assembleRelease --stacktrace
 
+      - name: Rename APKs
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/*.apk dist/AdSentinel-android-debug.apk
+          cp app/build/outputs/apk/release/*.apk dist/AdSentinel-android-release-unsigned.apk 2>/dev/null || true
+
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
           name: AdSentinel-android-apk
-          path: |
-            android/app/build/outputs/apk/debug/*.apk
-            android/app/build/outputs/apk/release/*.apk
+          path: android/dist/*.apk
           if-no-files-found: error
 
       - name: Attach APK to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: android/app/build/outputs/apk/debug/*.apk
+          files: android/dist/AdSentinel-android-debug.apk
