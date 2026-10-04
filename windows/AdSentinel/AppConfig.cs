@@ -32,10 +32,13 @@ public sealed class AppConfig
 
 public static class ConfigManager
 {
-    private static readonly JsonSerializerOptions WriteOptions = new()
+    // 读写共用同一套选项:写入为 camelCase,读取时忽略大小写,
+    // 保证旧配置文件(小写字段)与新配置都能正确还原
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
     };
 
     public static string Dir => Path.Combine(
@@ -51,8 +54,17 @@ public static class ConfigManager
         {
             if (File.Exists(ConfigPath))
             {
-                var config = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(ConfigPath));
-                if (config is not null) return config;
+                var config = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(ConfigPath), JsonOptions);
+                if (config is not null)
+                {
+                    // 自定义规则来自配置文件,未经 Compile() 无法匹配,此处统一编译
+                    foreach (var rule in config.CustomRules) rule.Compile();
+                    if (config.CustomRules.Count > 0)
+                    {
+                        Logger.Append($"已加载并编译 {config.CustomRules.Count} 条自定义规则");
+                    }
+                    return config;
+                }
             }
         }
         catch
@@ -65,7 +77,7 @@ public static class ConfigManager
     public static void Save(AppConfig config)
     {
         Directory.CreateDirectory(Dir);
-        File.WriteAllText(ConfigPath, JsonSerializer.Serialize(config, WriteOptions));
+        File.WriteAllText(ConfigPath, JsonSerializer.Serialize(config, JsonOptions));
     }
 }
 
