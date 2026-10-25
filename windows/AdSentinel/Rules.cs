@@ -17,17 +17,27 @@ public sealed class BlockRule
     private Regex? _process;
     private Regex? _class;
     private Regex? _title;
+    private bool _compiled;
 
     public void Compile()
     {
-        _process = CompilePattern(Process);
-        _class = CompilePattern(Class);
-        _title = CompilePattern(Title);
+        _compiled = false;
+        try
+        {
+            _process = CompilePattern(Process);
+            _class = CompilePattern(Class);
+            _title = CompilePattern(Title);
+            _compiled = true;
+        }
+        catch (ArgumentException)
+        {
+            // An invalid constraint must not broaden the rule to other windows.
+        }
     }
 
     public bool Matches(string process, string className, string title)
     {
-        if (!Enabled) return false;
+        if (!Enabled || !_compiled) return false;
         if (_process is null && _class is null && _title is null) return false;
         if (_process is not null && !_process.IsMatch(process)) return false;
         if (_class is not null && !_class.IsMatch(className)) return false;
@@ -38,14 +48,7 @@ public sealed class BlockRule
     private static Regex? CompilePattern(string? pattern)
     {
         if (string.IsNullOrWhiteSpace(pattern)) return null;
-        try
-        {
-            return new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        }
-        catch (ArgumentException)
-        {
-            return null;
-        }
+        return new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 }
 
